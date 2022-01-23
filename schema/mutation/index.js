@@ -6,6 +6,7 @@ const { isUserAuthenticated } = require('../../services/auth')
 const UserModel = require('../../models/user')
 const BlogModel = require('../../models/blog')
 const refreshTokenModel = require('../../models/refresh-token')
+const { sign, decode } = require('../../services/jwt')
 
 // type
 const BlogType = require('../type/blog')
@@ -73,7 +74,6 @@ exports.signup = {
 exports.createBlog = {
   type: BlogType,
   args: {
-    user: { type: GraphQLID },
     title: { type: GraphQLString },
     description: { type: GraphQLString },
     tags: { type: new GraphQLList(GraphQLString) }
@@ -81,7 +81,9 @@ exports.createBlog = {
   async resolve(parent, args, context) {
     const isAuthenticated = await isUserAuthenticated(context.req.cookies.tokens)
     if (isAuthenticated) {
-      const { user, title, description, tags } = args
+      const { accessToken } = JSON.parse(context.req.cookies.tokens)
+      const { id: user } = decode(accessToken)
+      const { title, description, tags } = args
       const blogObj = { user, title, description, tags }
       const blog = await BlogModel.create(blogObj)
       return blog
@@ -94,14 +96,16 @@ exports.createBlog = {
 exports.makeComment = {
   type: CommentType,
   args: {
-    user: { type: GraphQLID },
     blog: { type: GraphQLID },
     body: { type: GraphQLString }
   },
   async resolve(parent, args) {
+    const { blog, body } = args
     const isAuthenticated = await isUserAuthenticated(context.req.cookies.tokens)
     if (isAuthenticated) {
-      return await Comment.create(args)
+      const { accessToken } = JSON.parse(context.req.cookies.tokens)
+      const { id: user } = decode(accessToken)
+      return await Comment.create({ user, blog, body })
     } else {
       return 'Unauthorized user'
     }
@@ -117,12 +121,14 @@ exports.deleteBlogById = {
     const isAuthenticated = await isUserAuthenticated(context.req.cookies.tokens)
     if (isAuthenticated) {
       const { id } = args
-      const blog = await BlogModel.deleteOne({ _id: id })
-      if (blog.deletedCount) {
+      const { accessToken } = JSON.parse(context.req.cookies.tokens)
+      const { id: user } = decode(accessToken)
+      const blog = await BlogModel.findOneAndDelete({ _id: id, user })
+      if (blog) {
         return 'Blog deleted'
       }
 
-      return 'Blog not found'
+      return 'Your Blog not found'
     } else {
       return 'Unauthorized user'
     }
